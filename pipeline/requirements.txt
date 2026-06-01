@@ -1,0 +1,13 @@
+librosa>=0.10.1
+soundfile>=0.12.1
+numpy>=2.0.0
+opencv-python-headless>=4.9.0
+ffmpeg-python>=0.2.0
+google-api-python-client>=2.120.0
+google-auth>=2.29.0
+supabase>=2.4.0
+fastapi>=0.111.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+pytest>=8.1.1
+pytest-mock>=3.14.0
