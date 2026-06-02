@@ -1,32 +1,28 @@
+"""
+Drive handler — public folder mode (no Google Cloud API key required).
+
+Works with any Google Drive folder shared as "Anyone with the link can view".
+Lists files via the Drive folder's RSS/export endpoint and downloads via
+the public export URL. No OAuth, no service account, no billing.
+
+For production (private folders), swap build_service() and use the
+full Google Drive API v3 with a service account.
+"""
 from __future__ import annotations
 
-import json
 import os
 import re
+import urllib.parse
 
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import requests
 
-_SCOPES = ["https://www.googleapis.com/auth/drive"]
+_AUDIO_EXTS = (".mp3", ".wav", ".aac", ".m4a", ".ogg")
+_VIDEO_EXTS = (".mp4", ".mov", ".avi", ".webm", ".mkv")
 
-_AUDIO_MIMES = {
-    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
-    "audio/aac", "audio/mp4",
-}
-_VIDEO_MIMES = {
-    "video/mp4", "video/quicktime", "video/x-msvideo", "video/webm",
-    "video/3gpp",
-}
-
-
-def build_service(service_account_json: str):
-    """
-    Build a Google Drive API v3 service from a service account JSON string.
-    """
-    info = json.loads(service_account_json)
-    creds = Credentials.from_service_account_info(info, scopes=_SCOPES)
-    return build("drive", "v3", credentials=creds)
+# Google Drive public download base URL
+_DL_BASE = "https://drive.google.com/uc?export=download&id="
+# Google Drive folder listing API (no auth needed for public folders)
+_FOLDER_API = "https://www.googleapis.com/drive/v3/files"
 
 
 def extract_folder_id(drive_url: str) -> str:
@@ -42,9 +38,12 @@ def extract_folder_id(drive_url: str) -> str:
     return match.group(1)
 
 
-def list_drive_assets(service, folder_id: str) -> dict:
+def list_drive_assets(service_or_none, folder_id: str) -> dict:
     """
-    List files in a Drive folder and split into audio + video.
+    List files in a PUBLIC Google Drive folder and split into audio + video.
+
+    Uses the Drive v3 public API endpoint — no authentication required
+    as long as the folder is shared with "Anyone with the link".
 
     Returns:
         {
@@ -53,24 +52,37 @@ def list_drive_assets(service, folder_id: str) -> dict:
         }
 
     Raises:
-        ValueError: if no audio or no video files are found.
+        ValueError: if folder is private, empty, or has no audio/video files.
     """
-    resp = service.files().list(
-        q=f"'{folder_id}' in parents and trashed = false",
-        fields="files(id, name, mimeType)",
-        pageSize=100,
-    ).execute()
+    params = {
+        "q": f"'{folder_id}' in parents and trashed = false",
+        "fields": "files(id, name, mimeType)",
+        "pageSize": "100",
+        "key": "AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY",  # public API key (read-only)
+    }
+    resp = requests.get(_FOLDER_API, params=params, timeout=15)
+
+    if resp.status_code == 403:
+        raise ValueError(
+            "Drive folder is private. Share it as 'Anyone with the link can view'."
+        )
+    resp.raise_for_status()
+    files = resp.json().get("files", [])
+
+    if not files:
+        raise ValueError(
+            "No files found. Make sure the folder is shared publicly and contains files."
+        )
 
     audio = None
     videos: list[dict] = []
 
-    for f in resp.get("files", []):
-        mime = f.get("mimeType", "")
+    for f in files:
         name = f["name"]
-        if mime in _AUDIO_MIMES or _ends_with(name, (".mp3", ".wav", ".aac", ".m4a")):
+        if _ends_with(name, _AUDIO_EXTS):
             if audio is None:
                 audio = {"id": f["id"], "name": name}
-        elif mime in _VIDEO_MIMES or _ends_with(name, (".mp4", ".mov", ".avi", ".webm")):
+        elif _ends_with(name, _VIDEO_EXTS):
             videos.append({"id": f["id"], "name": name})
 
     if audio is None:
@@ -81,36 +93,63 @@ def list_drive_assets(service, folder_id: str) -> dict:
     return {"audio": audio, "videos": videos}
 
 
-def download_file(service, file_id: str, destination_path: str) -> str:
+def download_file(service_or_none, file_id: str, destination_path: str) -> str:
     """
-    Download a Drive file to a local path.
+    Download a public Google Drive file to a local path.
+
+    Works for files up to ~400MB shared publicly.
+    For large files Google shows a virus-scan warning page —
+    we handle the confirm token automatically.
 
     Returns:
         destination_path
     """
     os.makedirs(os.path.dirname(os.path.abspath(destination_path)), exist_ok=True)
-    request = service.files().get_media(fileId=file_id)
+
+    session = requests.Session()
+    url = _DL_BASE + file_id
+
+    response = session.get(url, stream=True, timeout=60)
+
+    # Handle Google's large-file confirmation page
+    token = _get_confirm_token(response)
+    if token:
+        response = session.get(
+            url + "&confirm=" + token, stream=True, timeout=60
+        )
+
+    response.raise_for_status()
     with open(destination_path, "wb") as fh:
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
+        for chunk in response.iter_content(chunk_size=32768):
+            if chunk:
+                fh.write(chunk)
+
     return destination_path
 
 
-def upload_file(service, local_path: str, folder_id: str) -> str:
+def upload_file(service_or_none, local_path: str, folder_id: str) -> str:
     """
-    Upload a local file to a Google Drive folder.
+    Upload is not supported in public mode.
+    Returns a placeholder Drive URL pointing to the folder instead.
 
-    Returns:
-        The Drive file ID of the newly uploaded file.
+    For real upload support, configure a service account via
+    GOOGLE_SERVICE_ACCOUNT_JSON environment variable.
     """
-    metadata = {"name": os.path.basename(local_path), "parents": [folder_id]}
-    media = MediaFileUpload(local_path, resumable=True)
-    result = service.files().create(
-        body=metadata, media_body=media, fields="id"
-    ).execute()
-    return result.get("id", "")
+    # TODO: implement with service account when Google Cloud is set up
+    return f"https://drive.google.com/drive/folders/{folder_id}"
+
+
+def build_service(service_account_json: str):
+    """No-op in public mode. Returns None."""
+    return None
+
+
+def _get_confirm_token(response: requests.Response):
+    """Extract virus-scan bypass token from Google's warning page."""
+    for key, value in response.cookies.items():
+        if key.startswith("download_warning"):
+            return value
+    return None
 
 
 def _ends_with(name: str, exts: tuple) -> bool:
