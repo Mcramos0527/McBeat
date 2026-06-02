@@ -111,7 +111,7 @@ def render(
         concat_list = os.path.join(tmp, "concat.txt")
         with open(concat_list, "w") as f:
             for seg in seg_paths:
-                f.write(f"file '{seg.replace(chr(92), '/')}'\n")
+                f.write(f"file '{seg.replace(os.sep, '/')}'\n")
 
         # Step 3: Concatenate (stream copy)
         concat_out = os.path.join(tmp, "merged.mp4")
