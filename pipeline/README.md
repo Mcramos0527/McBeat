@@ -1,23 +1,17 @@
-# McBeat AI Pipeline
+---
+title: McBeat Pipeline
+emoji: 🎵
+colorFrom: green
+colorTo: black
+sdk: docker
+pinned: false
+---
 
-Celery workers for audio analysis, clip scoring, beat matching, caption generation, and rendering.
+# McBeat Pipeline API
 
-## Key Dependencies
+Beat-sync video editing engine — music leads, video follows.
 
-```
-librosa
-essentia
-openai          # Whisper
-anthropic       # Claude
-opencv-python
-ffmpeg-python
-celery
-redis
-```
-
-## Running Workers
-
-```bash
-pip install -r requirements.txt
-celery -A worker worker --loglevel=info
-```
+**Endpoints:**
+- `GET /health` — status check
+- `POST /process-job` — trigger render `{ job_id, project_id }`
+- `GET /docs` — Swagger UI
