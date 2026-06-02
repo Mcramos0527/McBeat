@@ -1103,10 +1103,7 @@ var SITE_URL = "https://mcramos0527.github.io/McBeat";
 var currentUser = null;
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
-async function signInGoogle(){
-  var res = await fetch(SB_URL+"/auth/v1/authorize?provider=google&redirect_to="+encodeURIComponent(SITE_URL+"#demo"),
-    {method:"GET",headers:{"apikey":SB_ANON}});
-  // Redirect via full URL
+function signInGoogle(){
   window.location.href = SB_URL+"/auth/v1/authorize?provider=google&redirect_to="+encodeURIComponent(SITE_URL+"#demo");
 }
 
