@@ -6,11 +6,16 @@ import cv2
 import numpy as np
 
 
+# Normalization ceiling for motion score.
+# A mean pixel diff of ~10 corresponds to clearly active motion in typical footage.
+_MOTION_NORM_THRESHOLD = 10.0
+
+
 def score_clip(clip_path: str) -> dict:
     """
     Score a video clip on motion, brightness, and contrast using OpenCV.
 
-    Motion:     mean optical-flow magnitude across sampled frame pairs (normalized)
+    Motion:     mean absolute frame difference across sampled pairs — proxy for visual energy (normalized)
     Brightness: mean luminance across sampled frames, normalized to [0, 1]
     Contrast:   mean luminance std-dev across sampled frames, normalized to [0, 1]
 
@@ -54,8 +59,7 @@ def score_clip(clip_path: str) -> dict:
         diffs.append(float(np.mean(diff)))
 
     raw_motion = float(np.mean(diffs)) if diffs else 0.0
-    # ~10 mean pixel difference per frame = full motion (255 max theoretical)
-    motion_score = min(raw_motion / 10.0, 1.0)
+    motion_score = min(raw_motion / _MOTION_NORM_THRESHOLD, 1.0)
 
     # Brightness + Contrast: sampled every 5 frames
     sampled = gray_frames[::5] or gray_frames
