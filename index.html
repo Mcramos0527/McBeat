@@ -1104,7 +1104,7 @@ var currentUser = null;
 
 // ── AUTH ────────────────────────────────────────────────────────────────────
 function signInGoogle(){
-  window.location.href = SB_URL+"/auth/v1/authorize?provider=google&redirect_to="+encodeURIComponent(SITE_URL+"#demo");
+  window.location.href = SB_URL+"/auth/v1/authorize?provider=google&redirect_to="+encodeURIComponent(SITE_URL);
 }
 
 async function signOut(){
@@ -1131,22 +1131,27 @@ function updateAuthUI(){
 
 // Check for OAuth callback token in URL hash
 (function(){
-  var hash = window.location.hash;
-  if(hash.includes("access_token=")){
-    var params = new URLSearchParams(hash.replace("#",""));
-    var token = params.get("access_token");
-    if(token){
-      sessionStorage.setItem("sb_access_token", token);
-      fetch(SB_URL+"/auth/v1/user",{headers:{"apikey":SB_ANON,"Authorization":"Bearer "+token}})
-        .then(function(r){return r.json();})
-        .then(function(u){
-          currentUser = u;
-          sessionStorage.setItem("sb_user_email", u.email||"");
-          sessionStorage.setItem("sb_user_id", u.id||"");
-          updateAuthUI();
-          window.history.replaceState(null,"",SITE_URL+"#demo");
-        });
-    }
+  var hash = window.location.hash || "";
+  // Supabase returns: #access_token=...&token_type=bearer&...
+  // Strip leading #
+  var fragment = hash.startsWith("#") ? hash.slice(1) : hash;
+  if(fragment.includes("access_token=")){
+    try {
+      var params = new URLSearchParams(fragment);
+      var token = params.get("access_token");
+      if(token){
+        sessionStorage.setItem("sb_access_token", token);
+        fetch(SB_URL+"/auth/v1/user",{headers:{"apikey":SB_ANON,"Authorization":"Bearer "+token}})
+          .then(function(r){return r.json();})
+          .then(function(u){
+            currentUser = u;
+            sessionStorage.setItem("sb_user_email", u.email||"");
+            sessionStorage.setItem("sb_user_id", u.id||"");
+            updateAuthUI();
+            window.history.replaceState(null,"",SITE_URL);
+          });
+      }
+    } catch(e){ console.warn("Auth callback parse error", e); }
   } else {
     var email = sessionStorage.getItem("sb_user_email");
     var id = sessionStorage.getItem("sb_user_id");
@@ -1186,7 +1191,7 @@ async function submitJob(){
   if(!url.includes("drive.google.com")){alert("Paste a valid Google Drive folder URL.");return;}
   var fmt = document.querySelector("input[name='fmt']:checked").value;
   showStep("step-progress");
-  logLine('$ mcbeat render --drive "'+url.slice(0,46)+'..." --format '+fmt, "a");
+  logLine('$ mcbeat render --drive "'+(url||"").slice(0,46)+'..." --format '+(fmt||"tiktok"), "a");
   logLine("Connecting to pipeline...", "d");
 
   var userEmail = (currentUser && currentUser.email) ? currentUser.email : "demo@mcbeat.io";
