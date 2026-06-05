@@ -1182,7 +1182,6 @@ function resetDemo(){
 }
 
 async function submitJob(){
-  if(!currentUser){ alert("Please sign in with Google first."); return; }
   var url = document.getElementById("drive-url").value.trim();
   if(!url.includes("drive.google.com")){alert("Paste a valid Google Drive folder URL.");return;}
   var fmt = document.querySelector("input[name='fmt']:checked").value;
@@ -1190,13 +1189,14 @@ async function submitJob(){
   logLine('$ mcbeat render --drive "'+url.slice(0,46)+'..." --format '+fmt, "a");
   logLine("Connecting to pipeline...", "d");
 
+  var userEmail = (currentUser && currentUser.email) ? currentUser.email : "demo@mcbeat.io";
+
   try {
-    var token = sessionStorage.getItem("sb_access_token")||SB_ANON;
-    var hdrs = {"Content-Type":"application/json","apikey":SB_ANON,"Authorization":"Bearer "+token,"Prefer":"return=representation"};
+    var hdrs = {"Content-Type":"application/json","apikey":SB_ANON,"Authorization":"Bearer "+SB_ANON,"Prefer":"return=representation"};
 
     var uRes = await fetch(SB_URL+"/rest/v1/users",{method:"POST",
       headers:Object.assign({},hdrs,{"Prefer":"resolution=ignore-duplicates,return=representation"}),
-      body:JSON.stringify({email:currentUser.email,plan:"trial"})});
+      body:JSON.stringify({email:userEmail,plan:"trial"})});
     var uData = await uRes.json();
     var userId = (Array.isArray(uData)?uData[0]:uData).id;
 
