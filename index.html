@@ -1018,18 +1018,22 @@
     <div class="terminal-body" style="padding:2rem">
 
       <div class="demo-step" id="step-url">
-        <p class="t-out d" style="margin-bottom:0.75rem"># Paste your Google Drive folder URL</p>
-        <p class="t-out d" style="margin-bottom:1rem"># Folder must contain: 1 MP3/WAV + video clips (MP4/MOV)</p>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
-          <span style="color:var(--green-dim);font-size:0.8rem">drive_url =</span>
-          <input id="drive-url" type="text"
-            placeholder="https://drive.google.com/drive/folders/..."
-            style="flex:1;min-width:280px;background:#0a0f0a;border:1px solid rgba(0,255,65,0.3);
-                   color:var(--green);font-family:'Share Tech Mono',monospace;font-size:0.8rem;
-                   padding:0.5rem 0.75rem;outline:none;caret-color:var(--green)"/>
+        <p class="t-out d" style="margin-bottom:0.75rem"># Upload your music track</p>
+        <div style="margin-bottom:1.2rem">
+          <span style="color:var(--green-dim);font-size:0.78rem">audio_file =</span>
+          <input id="audio-file" type="file" accept=".mp3,.wav,.aac,.m4a"
+            style="margin-left:0.75rem;color:var(--text);font-family:'Share Tech Mono',monospace;
+                   font-size:0.75rem;background:transparent;border:none;cursor:pointer"/>
         </div>
-        <div style="display:flex;gap:1.5rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center">
-          <span style="color:var(--green-dim);font-size:0.8rem">export_format =</span>
+        <p class="t-out d" style="margin-bottom:0.5rem"># Upload your video clips (select multiple)</p>
+        <div style="margin-bottom:1.2rem">
+          <span style="color:var(--green-dim);font-size:0.78rem">video_clips =</span>
+          <input id="clip-files" type="file" accept=".mp4,.mov,.avi,.webm" multiple
+            style="margin-left:0.75rem;color:var(--text);font-family:'Share Tech Mono',monospace;
+                   font-size:0.75rem;background:transparent;border:none;cursor:pointer"/>
+        </div>
+        <div style="display:flex;gap:1.5rem;margin-top:0.5rem;flex-wrap:wrap;align-items:center">
+          <span style="color:var(--green-dim);font-size:0.78rem">export_format =</span>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
             <label class="fmt-btn"><input type="radio" name="fmt" value="tiktok" checked hidden> TikTok</label>
             <label class="fmt-btn"><input type="radio" name="fmt" value="reels" hidden> Reels</label>
@@ -1058,7 +1062,7 @@
         <p class="t-out" style="margin-top:0.5rem">Output uploaded to your Drive folder.</p>
         <a id="output-link" href="#" target="_blank" rel="noopener"
            style="display:inline-block;margin-top:1rem;color:var(--cyan);font-size:0.8rem;
-                  text-decoration:none;border-bottom:1px solid var(--cyan)">→ Open in Google Drive</a>
+                  text-decoration:none;border-bottom:1px solid var(--cyan)">→ Download Video</a>
         <br>
         <button onclick="resetDemo()"
           style="margin-top:1.5rem;background:transparent;color:var(--green-dim);
@@ -1187,31 +1191,32 @@ function resetDemo(){
 }
 
 async function submitJob(){
-  var url = document.getElementById("drive-url").value.trim();
-  if(!url.includes("drive.google.com")){alert("Paste a valid Google Drive folder URL.");return;}
+  var audioInput = document.getElementById("audio-file");
+  var clipsInput = document.getElementById("clip-files");
   var fmt = document.querySelector("input[name='fmt']:checked").value;
-  showStep("step-progress");
-  logLine('$ mcbeat render --drive "'+(url||"").slice(0,46)+'..." --format '+(fmt||"tiktok"), "a");
-  logLine("Connecting to pipeline...", "d");
 
-  var userEmail = (currentUser && currentUser.email) ? currentUser.email : "demo@mcbeat.io";
+  if(!audioInput.files.length){ alert("Select an audio file (MP3/WAV)."); return; }
+  if(!clipsInput.files.length){ alert("Select at least one video clip (MP4/MOV)."); return; }
+
+  showStep("step-progress");
+  logLine("$ mcbeat render --audio "+audioInput.files[0].name+" --clips "+clipsInput.files.length+" --format "+fmt, "a");
+  logLine("Uploading files to pipeline...", "d");
 
   try {
-    // Single call to HF Space — backend creates user/project/job with service key
-    var renderRes = await fetch(HF_URL+"/render", {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({drive_url: url, export_format: fmt, user_email: userEmail})
-    });
+    var form = new FormData();
+    form.append("audio", audioInput.files[0]);
+    for(var i=0; i<clipsInput.files.length; i++) form.append("clips", clipsInput.files[i]);
+    form.append("export_format", fmt);
+
+    var renderRes = await fetch(HF_URL+"/render-upload", {method:"POST", body: form});
     if(!renderRes.ok) throw new Error("Pipeline server error: "+renderRes.status);
     var renderData = await renderRes.json();
     var jobId = renderData.job_id;
     if(!jobId) throw new Error("No job_id returned from pipeline");
 
-    logLine("✓ Job queued: "+jobId.slice(0,8)+"...", "g");
-    setProgress(8);
-    logLine("✓ Pipeline started — music-first engine running...", "g");
-    setProgress(12);
+    logLine("✓ Files uploaded. Job: "+jobId.slice(0,8)+"...", "g");
+    setProgress(10);
+    logLine("✓ Pipeline running — beat detection in progress...", "g");
     await pollStatus(jobId);
 
   } catch(err){
@@ -1245,7 +1250,8 @@ async function pollStatus(jobId){
     }
     if(job.status==="complete"){
       var link=document.getElementById("output-link");
-      if(job.output_drive_url) link.href=job.output_drive_url;
+      var outUrl = job.output_drive_url || (HF_URL+"/download/"+jobId);
+      link.href = outUrl;
       showStep("step-done");
       return;
     }
