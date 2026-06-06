@@ -1197,31 +1197,19 @@ async function submitJob(){
   var userEmail = (currentUser && currentUser.email) ? currentUser.email : "demo@mcbeat.io";
 
   try {
-    var hdrs = {"Content-Type":"application/json","apikey":SB_ANON,"Authorization":"Bearer "+SB_ANON,"Prefer":"return=representation"};
-
-    var uRes = await fetch(SB_URL+"/rest/v1/users",{method:"POST",
-      headers:Object.assign({},hdrs,{"Prefer":"resolution=ignore-duplicates,return=representation"}),
-      body:JSON.stringify({email:userEmail,plan:"trial"})});
-    var uData = await uRes.json();
-    var userId = (Array.isArray(uData)?uData[0]:uData).id;
-
-    var pRes = await fetch(SB_URL+"/rest/v1/projects",{method:"POST",headers:hdrs,
-      body:JSON.stringify({user_id:userId,title:"CEO Demo",drive_folder_url:url,export_format:fmt})});
-    var pData = await pRes.json();
-    var projectId = (Array.isArray(pData)?pData[0]:pData).id;
-
-    var jRes = await fetch(SB_URL+"/rest/v1/jobs",{method:"POST",headers:hdrs,
-      body:JSON.stringify({project_id:projectId})});
-    var jData = await jRes.json();
-    var jobId = (Array.isArray(jData)?jData[0]:jData).id;
+    // Single call to HF Space — backend creates user/project/job with service key
+    var renderRes = await fetch(HF_URL+"/render", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({drive_url: url, export_format: fmt, user_email: userEmail})
+    });
+    if(!renderRes.ok) throw new Error("Pipeline server error: "+renderRes.status);
+    var renderData = await renderRes.json();
+    var jobId = renderData.job_id;
+    if(!jobId) throw new Error("No job_id returned from pipeline");
 
     logLine("✓ Job queued: "+jobId.slice(0,8)+"...", "g");
     setProgress(8);
-
-    await fetch(HF_URL+"/process-job",{method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({job_id:jobId,project_id:projectId})});
-
     logLine("✓ Pipeline started — music-first engine running...", "g");
     setProgress(12);
     await pollStatus(jobId);
@@ -1246,10 +1234,8 @@ async function pollStatus(jobId){
   var last="";
   for(var i=0;i<120;i++){
     await new Promise(function(r){setTimeout(r,3000);});
-    var res = await fetch(SB_URL+"/rest/v1/jobs?id=eq."+jobId+"&select=status,progress,output_drive_url,error_message",
-      {headers:{"apikey":SB_ANON,"Authorization":"Bearer "+SB_ANON}});
-    var data = await res.json();
-    var job = data[0];
+    var res = await fetch(HF_URL+"/job/"+jobId);
+    var job = await res.json();
     if(!job) continue;
     if(job.status!==last){
       var info=labels[job.status]||[job.status,job.progress];

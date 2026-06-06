@@ -20,9 +20,67 @@ class JobRequest(BaseModel):
     project_id: Annotated[str, Field(min_length=1)]
 
 
+class RenderRequest(BaseModel):
+    drive_url:     Annotated[str, Field(min_length=10)]
+    export_format: str = "tiktok"
+    user_email:    str = "demo@mcbeat.io"
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/render", status_code=202)
+def render_direct(req: RenderRequest):
+    """
+    All-in-one endpoint for the demo.
+    Creates user/project/job in Supabase (server-side with service key),
+    then triggers pipeline. Returns job_id for polling.
+    """
+    import uuid
+    from supabase import create_client
+    db = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+
+    # Upsert demo user
+    user_res = db.table("users").upsert(
+        {"email": req.user_email, "plan": "trial"},
+        on_conflict="email"
+    ).execute()
+    user_id = user_res.data[0]["id"] if user_res.data else str(uuid.uuid4())
+
+    # Create project
+    proj_res = db.table("projects").insert({
+        "user_id": user_id,
+        "title": "Demo Render",
+        "drive_folder_url": req.drive_url,
+        "export_format": req.export_format,
+    }).execute()
+    project_id = proj_res.data[0]["id"]
+
+    # Create job
+    job_res = db.table("jobs").insert({
+        "project_id": project_id,
+        "status": "queued",
+    }).execute()
+    job_id = job_res.data[0]["id"]
+
+    t = threading.Thread(
+        target=run_pipeline,
+        args=(job_id, project_id),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job_id, "status": "accepted"}
+
+
+@app.get("/job/{job_id}")
+def get_job(job_id: str):
+    """Poll job status — used by frontend instead of direct Supabase access."""
+    from supabase import create_client
+    db = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+    res = db.table("jobs").select("status,progress,output_drive_url,error_message").eq("id", job_id).single().execute()
+    return res.data or {"status": "not_found"}
 
 
 @app.post("/process-job", status_code=202)
