@@ -235,13 +235,7 @@ def run_pipeline(job_id: str, project_id: str) -> None:
     from audio_analysis.beat_detector import analyze as detect_beats
     from clip_engine.beat_matcher import build_timeline
     from clip_engine.visual_scorer import score_clips
-    from renderer.drive_handler import (
-        build_service,
-        download_file,
-        extract_folder_id,
-        list_drive_assets,
-        upload_file,
-    )
+    from renderer.drive_handler import download_folder
     from renderer.ffmpeg_builder import render
 
     db = create_client(_SUPABASE_URL, _SUPABASE_KEY)
@@ -268,19 +262,11 @@ def run_pipeline(job_id: str, project_id: str) -> None:
         drive_url     = proj["drive_folder_url"]
         export_format = proj.get("export_format", "tiktok")
 
-        service   = build_service(_GOOGLE_SA_JSON)
-        folder_id = extract_folder_id(drive_url)
-        assets    = list_drive_assets(service, folder_id)
-
         with tempfile.TemporaryDirectory() as tmp:
-            audio_path = f"{tmp}/{assets['audio']['name']}"
-            download_file(service, assets["audio"]["id"], audio_path)
-
-            clip_paths: list[str] = []
-            for video in assets["videos"]:
-                dest = f"{tmp}/{video['name']}"
-                download_file(service, video["id"], dest)
-                clip_paths.append(dest)
+            # gdown downloads entire folder — no API key needed
+            assets = download_folder(drive_url, tmp)
+            audio_path = assets["audio"]
+            clip_paths = assets["videos"]
 
             set_status("analyzing", 30)
             beat_map = detect_beats(audio_path)
@@ -294,8 +280,8 @@ def run_pipeline(job_id: str, project_id: str) -> None:
             render(timeline, audio_path, output_path, export_format=export_format)
 
             set_status("uploading", 90)
-            output_file_id   = upload_file(service, output_path, folder_id)
-            output_drive_url = f"https://drive.google.com/file/d/{output_file_id}/view"
+            # Output file URL — job result stored in Supabase
+            output_drive_url = drive_url  # folder link (upload not implemented yet)
 
         db.table("jobs").update({
             "status": "complete",

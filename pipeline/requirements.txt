@@ -2,10 +2,10 @@ librosa
 soundfile
 numpy
 opencv-python-headless
-google-api-python-client
-google-auth
+gdown
 supabase
 fastapi
 uvicorn
 python-multipart
 httpx
+requests
