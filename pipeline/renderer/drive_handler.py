@@ -58,7 +58,7 @@ def list_drive_assets(service_or_none, folder_id: str) -> dict:
         "q": f"'{folder_id}' in parents and trashed = false",
         "fields": "files(id, name, mimeType)",
         "pageSize": "100",
-        "key": "AIzaSyD-9tSrke72PouQMnMX-a7eZSW0jkFMBWY",  # public API key (read-only)
+        "key": os.environ.get("GOOGLE_API_KEY", ""),  # read-only Drive API key
     }
     resp = requests.get(_FOLDER_API, params=params, timeout=15)
 
