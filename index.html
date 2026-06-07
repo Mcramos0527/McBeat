@@ -1270,7 +1270,7 @@ async function pollStatus(jobId){
     failed:["Failed",0]
   };
   var last="";
-  for(var i=0;i<120;i++){
+  for(var i=0;i<240;i++){
     await new Promise(function(r){setTimeout(r,3000);});
     var res = await fetch(HF_URL+"/job/"+jobId);
     var job = await res.json();
