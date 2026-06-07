@@ -199,15 +199,6 @@ def render_direct(req: RenderRequest):
     return {"job_id": job_id, "status": "accepted"}
 
 
-@app.get("/job/{job_id}")
-def get_job(job_id: str):
-    """Poll job status — used by frontend instead of direct Supabase access."""
-    from supabase import create_client
-    db = create_client(_SUPABASE_URL, _SUPABASE_KEY)
-    res = db.table("jobs").select("status,progress,output_drive_url,error_message").eq("id", job_id).single().execute()
-    return res.data or {"status": "not_found"}
-
-
 @app.post("/process-job", status_code=202)
 def process_job(req: JobRequest):
     """
